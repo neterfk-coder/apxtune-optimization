@@ -1,4 +1,4 @@
-# Devpost submission — draft
+﻿# Devpost submission — draft
 
 In English, for the same reason `README.md` is: that's the language of the
 judging and of the Arm community. Switch it if the form asks otherwise.
@@ -118,7 +118,7 @@ apxtune apply --profile profiles/⟨key⟩.json
 ```
 
 Budget ⟨1–2⟩ h for step 4 depending on grid and model size. Tests:
-`python -m pytest -q` (33 tests, including a measured false-positive rate for
+`python -m pytest -q` (39 tests, including a measured false-positive rate for
 the Mann-Whitney implementation over 2000 trials).
 
 Hardware used for the numbers above: ⟨instance type, vCPU count, kernel,

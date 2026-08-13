@@ -96,6 +96,14 @@ def _validation(run, metric_name: str) -> dict | None:
     medición entrelazada o de restar dos números tomados con horas de
     diferencia. Sin esta clave, ambas se ven igual.
     """
+    if not getattr(run, "accepted", None):
+        # No hay dos configuraciones que comparar: el óptimo es el baseline.
+        # Marcarlo como "sin validar" sugeriría que el 1.0 es dudoso, y no lo
+        # es — es exacto por definición.
+        return {"method": "not_applicable", "interleaved": False, "ok": True,
+                "note": "ningún cambio aceptado: el óptimo es el baseline, "
+                        "speedup = 1.0 por definición y no hay nada que validar"}
+
     v = getattr(run, "validation", None)
     if v is None:
         return {"method": "search_medians", "interleaved": False, "ok": False,
@@ -118,6 +126,7 @@ def _validation(run, metric_name: str) -> dict | None:
         "tuned_ci95": [a.lo, a.hi] if a else None,
         "speedup": v.speedup,
         "p_value": round(v.comparison.p_value, 5),
+        "alpha": v.alpha,
         "significant": v.comparison.significant,
     }
 

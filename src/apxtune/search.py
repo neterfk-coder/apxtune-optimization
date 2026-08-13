@@ -39,6 +39,13 @@ class Step:
     note: str = ""
 
 
+# Alfa con el que se certifica el número publicable. Deliberadamente fijo: el
+# --alpha del CLI gobierna la búsqueda, que es exploración y es asunto de quien
+# corre la herramienta. Esto gobierna lo que entra al registro compartido, donde
+# los perfiles de gente distinta tienen que ser comparables entre sí.
+PUBLISH_ALPHA = 0.05
+
+
 @dataclass
 class Validation:
     """Comprobación final del baseline contra la mejor configuración.
@@ -51,6 +58,7 @@ class Validation:
     best: RunResult
     comparison: Comparison
     repeats: int
+    alpha: float = PUBLISH_ALPHA
     ok: bool = True
     error: str = ""
 
@@ -225,7 +233,7 @@ def tune(
 
     if validate and run.accepted:
         run.validation = final_validation(
-            workload, target, run, repeats=validate_repeats, alpha=alpha, log=log
+            workload, target, run, repeats=validate_repeats, log=log
         )
 
     return run
@@ -236,7 +244,7 @@ def final_validation(
     target: ArmTarget,
     run: TuningRun,
     repeats: int | None = None,
-    alpha: float = 0.05,
+    alpha: float = PUBLISH_ALPHA,
     log=print,
 ) -> Validation:
     """Baseline contra óptimo, medidos de nuevo y entrelazados.
@@ -250,6 +258,11 @@ def final_validation(
     Esto es una sola comparación, decidida de antemano, con las dos ramas
     medidas en el mismo intervalo de tiempo. Es la única cifra de esta corrida
     que se puede defender sin asteriscos.
+
+    Se certifica siempre a PUBLISH_ALPHA, no al --alpha del usuario. Aflojar el
+    umbral de la búsqueda es legítimo —es exploración— pero si eso arrastrara
+    también a la certificación, dos perfiles del registro con alphas distintos
+    dejarían de ser comparables y `significant: true` no significaría nada.
     """
     metric = workload.primary
     reps = repeats if repeats is not None else workload.repeats
@@ -276,6 +289,7 @@ def final_validation(
                 alpha=alpha,
             ),
             repeats=reps,
+            alpha=alpha,
             ok=False,
             error=err,
         )
@@ -296,7 +310,9 @@ def final_validation(
             "  ⚠ la ventaja no sobrevive a la medición entrelazada — "
             "los pasos aceptados pueden ser deriva del entorno, no tuning"
         )
-    return Validation(base=base_res, best=best_res, comparison=cmp_, repeats=reps)
+    return Validation(
+        base=base_res, best=best_res, comparison=cmp_, repeats=reps, alpha=alpha
+    )
 
 
 def attribution(run: TuningRun, metric: str, goal: str) -> list[dict]:

@@ -1,4 +1,4 @@
-"""Validación final: es la que respalda el número que se publica.
+﻿"""Validación final: es la que respalda el número que se publica.
 
 Si estas pruebas fallan, el speedup del reporte vuelve a ser un cociente de
 medianas tomadas en momentos distintos — que es exactamente lo que la
@@ -7,9 +7,9 @@ validación existe para evitar.
 
 import pytest
 
-from apxtune import bench, isa, space
+from apxtune import bench, isa, profiles, report, space
 from apxtune.bench import RunResult
-from apxtune.search import TuningRun, Validation
+from apxtune.search import Step, TuningRun, Validation
 from apxtune.stats import compare, summarize
 
 
@@ -33,13 +33,28 @@ def _validation(base_vals, best_vals, repeats=7):
     )
 
 
-def _run(baseline, best, validation=None):
+def _run(baseline, best, validation=None, steps=None):
     return TuningRun(
         workload="w",
         target=None,
         baseline=_res(baseline),
         best=_res(best),
+        steps=steps if steps is not None else [_step(accepted=True)],
         validation=validation,
+    )
+
+
+def _step(accepted=True):
+    a, b = _res([100] * 5), _res([120] * 5)
+    return Step(
+        axis="knob",
+        from_value=0,
+        to_value=1,
+        comparison=compare(a.estimates["tps"], b.estimates["tps"], goal="max"),
+        accepted=accepted,
+        metric="tps",
+        before=100.0,
+        after=120.0,
     )
 
 
@@ -97,6 +112,80 @@ def test_una_regresion_se_reporta_como_regresion():
     assert not v.comparison.accepted
 
 
+def test_aflojar_el_alpha_de_la_busqueda_no_afloja_la_certificacion():
+    """--alpha gobierna la exploración; el registro compartido no se toca.
+
+    Si la certificación heredara un --alpha 0.95, `significant: true` dejaría
+    de significar nada y dos perfiles del registro no serían comparables.
+    """
+    from apxtune import search
+
+    llamadas = {}
+
+    def fake_paired(workload, cfg_a, cfg_b, target, repeats=None):
+        a, b = _res([100] * 5), _res([101] * 5)
+        return a, b
+
+    def fake_compare(base, cand, goal, min_effect_pct, alpha):
+        llamadas["alpha"] = alpha
+        return compare(base, cand, goal=goal, min_effect_pct=min_effect_pct, alpha=alpha)
+
+    run = _run([100] * 5, [101] * 5)
+    orig_paired, orig_compare = search.measure_paired, search.compare
+    try:
+        search.measure_paired, search.compare = fake_paired, fake_compare
+        v = search.final_validation(_wl(), None, run, log=lambda *a: None)
+    finally:
+        search.measure_paired, search.compare = orig_paired, orig_compare
+
+    assert llamadas["alpha"] == search.PUBLISH_ALPHA == 0.05
+    assert v.alpha == 0.05
+
+
+def _wl():
+    return space.Workload(
+        name="w",
+        command="c",
+        metrics=[space.Metric(name="tps", regex=r"([0-9.]+)", primary=True)],
+        axes=[],
+    )
+
+
+# ───────────── 'el default ya era óptimo' no es un fallo ──────────────
+
+def _run_sin_cambios():
+    """Nada aceptado: el óptimo es el baseline, no hay nada que comparar."""
+    return _run([100] * 5, [100] * 5, validation=None, steps=[_step(accepted=False)])
+
+
+def test_sin_cambios_aceptados_el_speedup_es_exactamente_uno():
+    assert _run_sin_cambios().speedup("tps", "max") == pytest.approx(1.0)
+
+
+def test_sin_cambios_aceptados_el_perfil_no_se_marca_como_sin_validar():
+    """Marcarlo 'search_medians' sugeriría que el 1.0 es dudoso, y es exacto.
+
+    Además dejaría impublicable un perfil legítimo: profiles/README.md dice
+    que 'en este núcleo el default ya era óptimo' ahorra tiempo igual.
+    """
+    v = profiles._validation(_run_sin_cambios(), "tps")
+    assert v["method"] == "not_applicable"
+    assert v["ok"] is True
+    assert v["interleaved"] is False
+
+
+def test_sin_cambios_aceptados_el_reporte_no_avisa_de_nada(workload):
+    html = report._validation(_run_sin_cambios(), workload)
+    assert "warn" not in html, "no debe salir la advertencia roja: no hay nada que validar"
+    assert "1.00&times;" in html
+
+
+def test_con_cambios_pero_sin_validacion_el_reporte_si_avisa(workload):
+    """El caso contrario: aquí la advertencia sí tiene que aparecer."""
+    html = report._validation(_run([100] * 5, [150] * 5, validation=None), workload)
+    assert "warn" in html
+
+
 # ─────────────────────────── el entrelazado ────────────────────────────
 
 @pytest.fixture
@@ -151,6 +240,41 @@ def test_cada_rama_recoge_sus_propias_muestras(workload, spy, target, tmp_path):
     assert a.ok and b.ok
     assert a.value("tps") == 100 and b.value("tps") == 130
     assert a.estimates["tps"].n == 4 and b.estimates["tps"].n == 4
+
+
+def test_una_maquina_que_deriva_no_produce_una_mejora_falsa(workload, monkeypatch, target, tmp_path):
+    """El fallo que motiva todo el módulo, de punta a punta.
+
+    La caja se acelera sola a mitad de la corrida y ningún eje hace nada. Una
+    búsqueda ingenua mide el baseline con la caja fría, mide el candidato ya
+    caliente, ve +30% y publica una victoria inventada. La validación mide las
+    dos ramas entrelazadas al final, cuando ambas están en el mismo régimen, y
+    tiene que desmentirlo.
+    """
+    workload.cwd = str(tmp_path)
+    workload.repeats = 5
+    n = {"i": 0}
+
+    def fake_run(cmd, env, cwd, timeout):
+        n["i"] += 1
+        # La salida NO depende de la configuración, solo del momento. El corte
+        # son las 6 invocaciones de la primera medición (1 warmup + 5 repeats):
+        # el baseline entero cae en frío y todo lo posterior en caliente.
+        return True, f"tps={100.0 if n['i'] <= 6 else 130.0}", 0.01
+
+    monkeypatch.setattr(bench, "_run_once", fake_run)
+
+    frio = bench.measure(workload, {"x": "a"}, target)          # baseline, caja fría
+    caliente = bench.measure(workload, {"x": "b"}, target)      # candidato, ya caliente
+    ingenuo = compare(frio.estimates["tps"], caliente.estimates["tps"], goal="max")
+    assert ingenuo.accepted and ingenuo.pct == pytest.approx(30.0), (
+        "el montaje debe reproducir la trampa: la búsqueda ve +30% que no existe"
+    )
+
+    a, b = bench.measure_paired(workload, {"x": "a"}, {"x": "b"}, target, repeats=5)
+    honesto = compare(a.estimates["tps"], b.estimates["tps"], goal="max", min_effect_pct=0.0)
+    assert honesto.speedup == pytest.approx(1.0), "entrelazado, la deriva se cancela"
+    assert not honesto.accepted, "y el cambio falso no debe aceptarse"
 
 
 def test_si_una_rama_falla_se_anula_la_comparacion_entera(workload, monkeypatch, target, tmp_path):

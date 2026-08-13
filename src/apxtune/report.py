@@ -257,6 +257,14 @@ def _validation(run, workload) -> str:
     metric = workload.primary
     v = getattr(run, "validation", None)
 
+    if not run.accepted:
+        return """<h2>Procedencia del número</h2>
+<p>No se aceptó ningún cambio, así que la configuración óptima <b>es</b> el
+baseline: el speedup es 1.00&times; por definición y no hay dos configuraciones
+que comparar, ni por tanto nada que validar. Es un resultado, no un fallo — dice
+que en este hardware el default ya estaba en el óptimo del espacio explorado, y
+eso le ahorra la búsqueda a quien venga detrás con el mismo núcleo.</p>"""
+
     if v is None or not v.ok:
         why = (
             f" El intento falló: {_e(v.error)}." if v is not None and v.error else ""
@@ -294,11 +302,13 @@ para que ninguna de las dos herede siempre las cachés calientes de la otra.</p>
 <tr><td>optimizado</td><td class="num">{a.median:.4g}</td>
     <td class="num">[{a.lo:.4g}, {a.hi:.4g}]</td><td class="num">{a.rsd:.1f}%</td></tr>
 </tbody></table>
-<p>Mann-Whitney de dos colas sobre las dos series: <b>p={cmp_.p_value:.4f}</b>.
-Es una sola comparación, decidida antes de medirla, así que ese p-valor se lee
-tal cual — a diferencia de los de la cascada, que salen de una decena de pruebas
-sucesivas y no llevan corrección por multiplicidad. La cascada explica de dónde
-vino la ganancia; este bloque es el que la certifica.</p>
+<p>Mann-Whitney de dos colas sobre las dos series: <b>p={cmp_.p_value:.4f}</b>,
+contra &alpha;={v.alpha}. Es una sola comparación, decidida antes de medirla,
+así que ese p-valor se lee tal cual — a diferencia de los de la cascada, que
+salen de una decena de pruebas sucesivas y no llevan corrección por
+multiplicidad. La cascada explica de dónde vino la ganancia; este bloque es el
+que la certifica, y por eso su &alpha; es fijo aunque se afloje el de la
+búsqueda con <code>--alpha</code>.</p>
 {verdict}"""
 
 

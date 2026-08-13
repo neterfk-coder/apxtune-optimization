@@ -1,4 +1,4 @@
-# apxtune — brief para Claude Code
+﻿# apxtune — brief para Claude Code
 
 Este archivo es contexto persistente del proyecto. Léelo completo antes de tocar
 código. Si algo aquí contradice lo que ves en el repo, el repo manda — pero
@@ -33,7 +33,7 @@ repite el diseño.
 Todo lo siguiente está probado y funciona en este momento:
 
 - `src/apxtune/` — 8 módulos, **cero dependencias en runtime**
-- 33 tests pasando (`python -m pytest -q`), incluyendo calibración real de
+- 39 tests pasando (`python -m pytest -q`), incluyendo calibración real de
   la tasa de falsos positivos de Mann-Whitney sobre 2000 ensayos
 - El speedup publicado sale de una **validación final A/B entrelazada**
   (`search.final_validation`, `bench.measure_paired`): terminada la búsqueda

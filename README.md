@@ -1,4 +1,4 @@
-# apxtune
+﻿# apxtune
 
 **Your Arm box, tuned in minutes. Same model, same weights, measurably faster — with hardware counters as the proof.**
 
@@ -237,7 +237,7 @@ printing.
 ```bash
 apxtune doctor                                        # is this box measurable?
 apxtune tune workloads/demo-synthetic.toml --out r/   # ~2 min, no downloads
-python -m pytest -q                                   # 33 tests
+python -m pytest -q                                   # 39 tests
 ```
 
 The test suite checks the statistics themselves, not just the plumbing: the

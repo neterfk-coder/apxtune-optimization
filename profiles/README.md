@@ -21,10 +21,12 @@ la forma del óptimo.
 1. `apxtune tune <workload> --out results/`
 2. Revisa que `rsd_pct` del baseline sea menor a 5%. Por encima de eso el
    entorno tenía demasiado ruido y el perfil no es publicable.
-3. Revisa el bloque `validation` del JSON. Para publicar hace falta
-   `"method": "interleaved_ab"` y `"significant": true`. Si dice
-   `"method": "search_medians"`, la validación final no llegó a correr y el
-   speedup arrastra la deriva del entorno durante toda la corrida — no es
+3. Revisa el bloque `validation` del JSON. Se publica si dice
+   `"method": "interleaved_ab"` con `"significant": true`, o
+   `"method": "not_applicable"` (no se aceptó ningún cambio: el óptimo es el
+   baseline y el speedup es 1.0 exacto, así que no hay nada que validar).
+   Si dice `"method": "search_medians"`, la validación final no llegó a correr
+   y el speedup arrastra la deriva del entorno durante toda la corrida — no es
    comparable con el resto del registro. Repite sin `--no-validate`.
 4. Copia `results/<clave>.json` aquí y abre un PR.
 
