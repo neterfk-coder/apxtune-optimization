@@ -1,0 +1,119 @@
+name = "llama.cpp llama-bench"
+description = "Prefill y decode de un GGUF en CPU Arm. Mide pp512 y tg128."
+cwd = "~/llama.cpp"
+
+# {threads}, {ubatch}, ... se sustituyen desde los ejes de abajo.
+# {big_cluster} lo resuelve apxtune con la topología real de la máquina.
+#
+# -r 1 a propósito. Las repeticiones las lleva apxtune ([bench] repeats), que
+# además calcula IC por bootstrap y compara con Mann-Whitney. Pedirle a
+# llama-bench sus propias repeticiones triplicaría el tiempo de cómputo para
+# entregar un promedio que apxtune volvería a promediar — y ese promedio previo
+# esconde la varianza real que el test estadístico necesita ver.
+command = """
+taskset -c {cpuset} ./build/bin/llama-bench \
+  -m {model} -t {threads} -ub {ubatch} -fa {flash_attn} \
+  -p 512 -n 128 -r 1 -o md
+"""
+
+[bench]
+warmup = 1
+repeats = 7
+timeout_s = 1800
+
+[defaults]
+threads = 4
+
+# ── métricas ──────────────────────────────────────────────────────────
+# llama-bench -o md imprime: | ... | tg128 | 12.34 ± 0.10 |
+
+[[metric]]
+name = "decode_tps"
+regex = 'tg128\s*\|\s*([0-9]+\.?[0-9]*)'
+goal = "max"
+unit = "tok/s"
+primary = true
+
+[[metric]]
+name = "prefill_tps"
+regex = 'pp512\s*\|\s*([0-9]+\.?[0-9]*)'
+goal = "max"
+unit = "tok/s"
+
+# ── ejes ──────────────────────────────────────────────────────────────
+# Orden de impacto esperado: build > cuantización > threads > resto.
+# apxtune los ordena solo: prelude primero, luego arg, luego env.
+
+[[axis]]
+name = "build"
+kind = "prelude"
+note = "KleidiAI aporta microkernels de Arm para GEMM int8"
+values = [
+  "cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON >/dev/null && cmake --build build -j$(nproc) --target llama-bench >/dev/null",
+  "cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_CPU_KLEIDIAI=ON >/dev/null && cmake --build build -j$(nproc) --target llama-bench >/dev/null",
+]
+[axis.labels]
+"cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON >/dev/null && cmake --build build -j$(nproc) --target llama-bench >/dev/null" = "sin KleidiAI"
+"cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_CPU_KLEIDIAI=ON >/dev/null && cmake --build build -j$(nproc) --target llama-bench >/dev/null" = "KleidiAI"
+
+# Descarga los dos GGUF antes de correr. Q4_0 se re-empaqueta en tiempo de
+# carga a kernels i8mm/SVE; las K-quants no siempre. En Neoverse con i8mm
+# la diferencia en prefill suele ser grande — pero mídela, no la asumas.
+[[axis]]
+name = "model"
+kind = "arg"
+requires = ["i8mm"]
+note = "Q4_0 habilita el re-empaquetado a kernels SMMLA"
+values = [
+  "models/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+  "models/Llama-3.2-3B-Instruct-Q4_0.gguf",
+]
+[axis.labels]
+"models/Llama-3.2-3B-Instruct-Q4_K_M.gguf" = "Q4_K_M"
+"models/Llama-3.2-3B-Instruct-Q4_0.gguf" = "Q4_0"
+
+[[axis]]
+name = "threads"
+kind = "arg"
+note = "más hilos no es mejor: el decode es memory-bound"
+values = ["$core_sweep"]
+
+[[axis]]
+name = "cpuset"
+kind = "arg"
+note = "en big.LITTLE, mezclar clusters hunde el throughput"
+values = ["$all_cpus", "$big_cluster"]
+
+[[axis]]
+name = "ubatch"
+kind = "arg"
+values = [512, 256, 128]
+
+[[axis]]
+name = "flash_attn"
+kind = "arg"
+values = [0, 1]
+[axis.labels]
+"0" = "fa off"
+"1" = "fa on"
+
+[[axis]]
+name = "malloc"
+kind = "env"
+env = "LD_PRELOAD"
+note = "glibc malloc fragmenta con muchos hilos; jemalloc suele ganar"
+values = [
+  "",
+  "/usr/lib/aarch64-linux-gnu/libjemalloc.so.2",
+  "/usr/lib/aarch64-linux-gnu/libtcmalloc_minimal.so.4",
+]
+[axis.labels]
+"" = "glibc"
+"/usr/lib/aarch64-linux-gnu/libjemalloc.so.2" = "jemalloc"
+"/usr/lib/aarch64-linux-gnu/libtcmalloc_minimal.so.4" = "tcmalloc"
+
+[[axis]]
+name = "omp_bind"
+kind = "env"
+env = "OMP_PROC_BIND"
+values = ["false", "close", "spread"]

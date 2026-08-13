@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+# Salida de trabajo: se regenera en cada corrida y no se versiona.
+# La evidencia que sí se publica (el perfil y su reporte) se copia a
+# profiles/, que no está ignorado. Ver profiles/README.md.
+results/
+*.gguf
+models/
+.pytest_cache/
+performix-out/

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apxtune"
+version = "0.3.0"
+description = "Autotuning de inferencia LLM en Arm guiado por contadores de hardware (Arm Performix)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "apxtune contributors" }]
+keywords = ["arm", "aarch64", "neoverse", "graviton", "llm", "inference", "performix", "benchmark"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: System :: Benchmark",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+apxtune = "apxtune.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/TU_USUARIO/apxtune"
+Issues = "https://github.com/TU_USUARIO/apxtune/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

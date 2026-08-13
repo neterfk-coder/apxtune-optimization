@@ -1,0 +1,111 @@
+# arm-perf-guard — impide que una regresión de rendimiento en Arm entre a main.
+#
+# Copia este archivo a .github/workflows/ de tu repo y apunta WORKLOAD a tu
+# TOML. Corre en los runners Arm nativos de GitHub, que son gratuitos en
+# repositorios públicos, así que no necesitas infraestructura propia.
+
+name: arm-perf-guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  WORKLOAD: workloads/demo-synthetic.toml
+  # Umbral de regresión: si el óptimo encontrado rinde por debajo de esto
+  # respecto al baseline, el job falla.
+  FAIL_UNDER: "1.0"
+
+jobs:
+  tune:
+    name: tune en ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar apxtune
+        run: pip install -e .
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Inventario del hardware
+        run: |
+          apxtune detect
+          apxtune detect --json > hardware.json
+
+      - name: Revisar el entorno de medición
+        # doctor sale con 1 si falta algo opcional (Performix, PMU): en un
+        # runner compartido es lo esperado, así que no rompemos el job.
+        run: apxtune doctor || true
+
+      - name: Autotuning
+        run: |
+          apxtune tune "$WORKLOAD" \
+            --out results \
+            --passes 2 \
+            --explore-repeats 3 \
+            --min-effect 3.0 \
+            --no-performix \
+            --fail-under "$FAIL_UNDER"
+
+      - name: Resumen del job
+        if: always()
+        run: |
+          {
+            echo "## apxtune · ${{ matrix.runner }}"
+            echo
+            for f in results/*.json; do
+              [ -e "$f" ] || continue
+              python - "$f" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1]))
+          print(f"**{p['target']['part']}** · {p['target']['physical_cores']} cores · `{p['target']['gemm_path']}`")
+          print()
+          # El titular sale de la validación entrelazada si la hubo; si no, del
+          # cociente de medianas de la búsqueda, y entonces se dice.
+          v = p.get('validation') or {}
+          if v.get('ok'):
+              lo, hi = v['baseline_median'], v['tuned_median']
+              nota = f"validado A/B intercalado · {v['pairs']} pares · p={v['p_value']:.4f}"
+          else:
+              lo, hi = p['baseline']['median'], p['tuned']['median']
+              nota = "⚠ sin validación entrelazada: medianas tomadas en momentos distintos"
+          print(f"`{p['workload']['metric']}` **{lo:.4g} → {hi:.4g}** ({p['speedup']:.2f}x)")
+          print()
+          print(f"_{nota}_")
+          print()
+          if p['attribution']:
+              print("| cambio | de | a | efecto | p |")
+              print("|---|---|---|---:|---:|")
+              for a in p['attribution']:
+                  print(f"| {a['axis']} | `{a['from']}` | `{a['to']}` | {a['pct']:+.1f}% | {a['p_value']:.4f} |")
+          else:
+              print("_Ningún cambio superó el umbral de aceptación._")
+          PY
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apxtune-${{ matrix.runner }}
+          path: |
+            results/
+            hardware.json
+          if-no-files-found: warn

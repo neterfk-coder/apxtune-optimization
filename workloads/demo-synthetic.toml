@@ -1,0 +1,49 @@
+name = "demo sintético"
+description = "Verifica apxtune de punta a punta sin modelos ni compilación. ~3 min."
+cwd = "."
+
+command = "python3 scripts/synthetic_workload.py --threads {threads} --block {block} --vector {vector} --iters 4"
+
+[bench]
+warmup = 1
+repeats = 5
+timeout_s = 300
+
+[defaults]
+threads = 1
+block = 256
+vector = 0
+
+[[metric]]
+name = "decode_tps"
+regex = 'tg128\s*\|\s*([0-9]+\.?[0-9]*)'
+goal = "max"
+unit = "tok/s"
+primary = true
+
+[[metric]]
+name = "prefill_tps"
+regex = 'pp512\s*\|\s*([0-9]+\.?[0-9]*)'
+goal = "max"
+unit = "tok/s"
+
+[[axis]]
+name = "vector"
+kind = "arg"
+note = "ruta vectorizada frente a escalar"
+values = [0, 1]
+[axis.labels]
+"0" = "escalar"
+"1" = "vectorizada"
+
+[[axis]]
+name = "threads"
+kind = "arg"
+note = "rendimiento decreciente pasado el número de cores"
+values = ["$core_sweep"]
+
+[[axis]]
+name = "block"
+kind = "arg"
+note = "tamaño de bloque frente a la jerarquía de caché"
+values = [256, 4096, 32768]

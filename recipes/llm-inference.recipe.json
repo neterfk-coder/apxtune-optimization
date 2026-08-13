@@ -1,0 +1,51 @@
+{
+  "_schema_note": "Borrador de receta personalizada para Arm Performix 2026.1. El formato de recetas puede cambiar entre versiones: valida con `apx recipe validate recipes/llm-inference.recipe.json` antes de usarla y ajusta los nombres de eventos a los de tu núcleo (apx events list).",
+  "name": "llm-inference",
+  "version": "0.3.0",
+  "title": "LLM Inference (prefill / decode)",
+  "description": "Caracteriza inferencia de LLM en CPU Arm separando las dos fases: prefill (compute-bound, GEMM) y decode (memory-bound, GEMV). Las recetas genéricas promedian ambas y esconden el cuello de botella real.",
+  "targets": ["Neoverse-N1", "Neoverse-V1", "Neoverse-N2", "Neoverse-V2", "Neoverse-V3", "AmpereOne"],
+  "sampling": { "mode": "counting", "interval_ms": 100, "multiplex": true },
+
+  "groups": [
+    {
+      "name": "throughput",
+      "description": "Techo de trabajo útil por ciclo",
+      "events": ["CPU_CYCLES", "INST_RETIRED", "OP_RETIRED", "OP_SPEC"]
+    },
+    {
+      "name": "int8-matmul",
+      "description": "¿Está el CPU usando de verdad los kernels de matmul de Arm?",
+      "events": ["ASE_SVE_INT8_SPEC", "ASE_INT_SPEC", "SVE_INST_SPEC", "ASE_SPEC", "DP_SPEC"],
+      "note": "La fracción de estas instrucciones sobre INST_SPEC es la prueba directa de que Q4_0 se re-empaquetó a kernels SMMLA/SDOT. Si no sube al cambiar la cuantización, el re-empaquetado no ocurrió."
+    },
+    {
+      "name": "memory",
+      "description": "Decode está limitado por ancho de banda, no por cómputo",
+      "events": ["L1D_CACHE_REFILL", "L2D_CACHE_REFILL", "LL_CACHE_MISS_RD", "MEM_ACCESS", "BUS_ACCESS"]
+    },
+    {
+      "name": "topdown",
+      "description": "Desglose de dónde se pierden los slots de emisión",
+      "events": ["STALL_FRONTEND", "STALL_BACKEND", "STALL_BACKEND_MEM", "BR_MIS_PRED_RETIRED", "BR_RETIRED"]
+    }
+  ],
+
+  "metrics": [
+    { "name": "ipc", "expr": "INST_RETIRED / CPU_CYCLES", "unit": "inst/ciclo", "higher_is_better": true },
+    { "name": "int8_matmul_fraction", "expr": "ASE_SVE_INT8_SPEC / OP_SPEC * 100", "unit": "%", "higher_is_better": true,
+      "guidance": "En prefill con Q4_0 sobre un núcleo con i8mm esto debería ser claramente distinto de cero. Cerca de cero significa que estás pagando i8mm en silicio y no lo estás usando." },
+    { "name": "backend_stall_pct", "expr": "STALL_BACKEND / CPU_CYCLES * 100", "unit": "%", "higher_is_better": false },
+    { "name": "mem_stall_share", "expr": "STALL_BACKEND_MEM / STALL_BACKEND * 100", "unit": "%", "higher_is_better": false,
+      "guidance": "Por encima de ~70% el cuello es memoria: sube la cuantización o baja los hilos antes de tocar los kernels." },
+    { "name": "ll_mpki", "expr": "LL_CACHE_MISS_RD / INST_RETIRED * 1000", "unit": "fallos/1k inst", "higher_is_better": false },
+    { "name": "branch_mpki", "expr": "BR_MIS_PRED_RETIRED / INST_RETIRED * 1000", "unit": "fallos/1k inst", "higher_is_better": false }
+  ],
+
+  "guidance": [
+    { "when": "mem_stall_share > 70 && int8_matmul_fraction < 1", "say": "Memory-bound y sin usar int8 matmul. Prueba una cuantización más agresiva y menos hilos antes que cualquier cambio de kernel." },
+    { "when": "int8_matmul_fraction < 1 && target.has('i8mm')", "say": "El núcleo tiene i8mm y no se está ejecutando ni una instrucción de matmul int8. Revisa el re-empaquetado de pesos y que el build incluya KleidiAI." },
+    { "when": "backend_stall_pct > 60 && mem_stall_share < 40", "say": "Backend saturado pero no por memoria: probablemente latencia de las unidades vectoriales. Mira el tamaño de ubatch." },
+    { "when": "ipc < 1.0", "say": "IPC bajo para inferencia. Verifica afinidad de hilos y que no estés mezclando clusters big.LITTLE." }
+  ]
+}

@@ -1,0 +1,13 @@
+# El proyecto se edita en Windows y se ejecuta en Arm/Linux. Sin esto, un
+# scripts/*.sh con CRLF falla en el destino con "bad interpreter: /bin/bash^M",
+# y los TOML de workload dejan de parsear por el \r final del valor.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+
+*.gguf binary

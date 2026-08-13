@@ -1,0 +1,100 @@
+{
+  "_this_is": "Schema example only \u2014 not a real measurement. apxtune generates these; do not hand-write.",
+  "schema": 1,
+  "generated_utc": "2026-08-13T14:22:07+00:00",
+  "profile_key": "Neoverse-V2.64c.i8mm+bf16",
+  "target": {
+    "part": "Neoverse-V2",
+    "arch": "aarch64",
+    "physical_cores": 64,
+    "logical_cpus": 64,
+    "numa_nodes": 1,
+    "features": [
+      "asimd",
+      "asimddp",
+      "i8mm",
+      "bf16",
+      "sve",
+      "sve2",
+      "svei8mm",
+      "svebf16"
+    ],
+    "gemm_path": "NEON i8mm (SMMLA)",
+    "kernel": "6.8.0-1021-aws",
+    "distro": "Linux-6.8.0-1021-aws-aarch64-with-glibc2.39"
+  },
+  "workload": {
+    "name": "llama.cpp llama-bench",
+    "description": "...",
+    "metric": "decode_tps",
+    "goal": "max",
+    "repeats": 7
+  },
+  "baseline": {
+    "config": {
+      "threads": 4,
+      "model": "\u2026Q4_K_M.gguf"
+    },
+    "median": 0.0,
+    "ci95": [
+      0.0,
+      0.0
+    ],
+    "rsd_pct": 0.0
+  },
+  "tuned": {
+    "config": {
+      "threads": 16,
+      "model": "\u2026Q4_0.gguf"
+    },
+    "median": 0.0,
+    "ci95": [
+      0.0,
+      0.0
+    ],
+    "rsd_pct": 0.0,
+    "command": "taskset -c 0-63 ./build/bin/llama-bench \u2026"
+  },
+  "speedup": 0.0,
+  "_speedup_note": "Sale de validation, no de tuned.median / baseline.median. Ver abajo.",
+  "validation": {
+    "_what": "Procedencia del speedup. method=interleaved_ab: al terminar la búsqueda se remidió baseline vs óptimo alternando A,B,B,A… dentro del mismo intervalo de tiempo, así que la deriva térmica cae por igual sobre las dos ramas en vez de contarse como mejora. method=search_medians: esa validación no se hizo o falló, y entonces el número arrastra lo que haya pasado en el entorno entre el principio y el final de la corrida. Un perfil publicable tiene method=interleaved_ab y significant=true.",
+    "method": "interleaved_ab",
+    "interleaved": true,
+    "ok": true,
+    "pairs": 7,
+    "baseline_median": 0.0,
+    "baseline_ci95": [
+      0.0,
+      0.0
+    ],
+    "tuned_median": 0.0,
+    "tuned_ci95": [
+      0.0,
+      0.0
+    ],
+    "speedup": 0.0,
+    "p_value": 0.0,
+    "significant": true
+  },
+  "attribution": [
+    {
+      "axis": "build",
+      "from": "no-kleidiai",
+      "to": "KleidiAI",
+      "pct": 0.0,
+      "p_value": 0.0,
+      "note": "\u2026"
+    }
+  ],
+  "rejected": [
+    {
+      "axis": "ubatch",
+      "to": "128",
+      "pct": 0.0,
+      "reason": "\u2026"
+    }
+  ],
+  "trials": 0,
+  "wall_seconds": 0.0
+}
